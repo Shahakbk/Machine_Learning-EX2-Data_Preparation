@@ -16,31 +16,32 @@ from mpl_toolkits.mplot3d import Axes3D
 # dataset = pd.read_csv(data_url, header=0)
 dataset = pd.read_csv('ElectionsData.csv', header=0)
 
-# Identify which of the features are objects.
-ObjFeat = dataset.keys()[dataset.dtypes.map(lambda x: x=='object')]
-
 # Converting binary features to 0 / 1 representation.
-dataset['Looking_at_poles_results_Binary'] = dataset['Looking_at_poles_results'].map( {'No':0, 'Yes':1, 'nan':-1}).astype(int)
-dataset.drop(['Looking_at_poles_results'], axis=1)
+dataset['Looking_at_poles_results_Numeric'] = dataset['Looking_at_poles_results'].map({'No': 0, 'Yes': 1, np.nan: -1}).astype(int)
+dataset['Married_Numeric'] = dataset['Married'].map({'No': 0, 'Yes': 1, np.nan: -1}).astype(int)
+dataset['Gender_Numeric'] = dataset['Gender'].map({'Male': 0, 'Female': 1, np.nan: -1}).astype(int)
+dataset['Voting_Time_Numeric'] = dataset['Voting_Time'].map({'By_16:00': 0, 'After_16:00': 1, np.nan: -1}).astype(int)
+dataset['Financial_agenda_matters_Numeric'] = dataset['Financial_agenda_matters'].map({'No': 0, 'Yes': 1, np.nan: -1}).astype(int)
 
-dataset['Married_Binary'] = dataset['Married'].map( {'No':0, 'Yes':1, 'nan':-1}).astype(int)
-dataset.drop(['Married'], axis=1)
+# Dropping the previous non-numerical columns.
+dataset = dataset.drop(['Looking_at_poles_results', 'Married', 'Gender', 'Voting_Time', 'Financial_agenda_matters'], axis=1)
 
-dataset['Gender_Binary'] = dataset['Gender'].map( {'Male':0, 'Female':1, 'nan':-1}).astype(int)
-dataset.drop(['Gender'], axis=1)
+# Converting the 'Vote' column to numerical.
+dataset['Vote'] = dataset['Vote'].map({'Blues': 0, 'Browns': 1, 'Greens': 2, 'Greys': 3, 'Khakis': 4,
+                                               'Oranges': 5, 'Pinks': 6, 'Purples': 7, 'Reds': 8, 'Turquoises': 9,
+                                               'Violets': 10, 'Whites': 11, 'Yellows': 12}).astype(int)
+# Y will be the 'Vote' column (the label).
+y = dataset['Vote']
 
-dataset['Voting_Time_Binary'] = dataset['Voting_Time'].map( {'By_16:00':0, 'After_16:00':1, 'nan':-1}).astype(int)
-dataset.drop(['Voting_Time'], axis=1)
+# Converting categorical features to OneHot representation.
+dataset_dummies = pd.get_dummies(data=dataset, columns=['Most_Important_Issue', 'Main_transportation', 'Occupation'])
+dataset = pd.concat([dataset, dataset_dummies], axis=1)
 
-dataset['Financial_agenda_matters_Binary'] = dataset['Financial_agenda_matters'].map( {'No':0, 'Yes':1, 'nan':-1}).astype(int)
-dataset.drop(['Financial_agenda_matters'], axis=1)
+# Dropping the previous non-numerical columns.
+dataset = dataset.drop(['Most_Important_Issue', 'Main_transportation', 'Occupation'], axis=1)
 
-# TODO this creates OneHot for all categorial feautres. before that, i wanted to convert binary categories seperately because OneHot is redundant but nan values need to be handled.
-# dataset = pd.get_dummies(dataset)
-
-# Y will be the 'Vote' column (the label) and X will be the rest of the columns.
+# X will be the rest of the columns.
 X = dataset.drop(['Vote'], axis=1)
-y = dataset['Vote'].values
 
 # Splitting the data into train, validation and test sets divided randomly to 60% : 20% : 20%.
 # Since train_test_split only splits into two sets, the procedure will be done twice.
@@ -55,7 +56,6 @@ X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.5, r
 # Imputing the missing data.
 imp = SimpleImputer(strategy="most_frequent")
 X_train = imp.fit_transform(X_train)
-
 
 
 # Detecting outliers.

@@ -28,7 +28,16 @@ def load_data(datapath):
 def per(a,b):
     return len(a) / len(b)
 
-def split_data(data):
+
+def choose_subset(data, indexes):
+    return data.iloc[indexes]
+
+
+def get_subsets(data, train_indexes, validation_indexes, test_indexes):
+    return choose_subset(data, train_indexes), choose_subset(data, validation_indexes), choose_subset(data, test_indexes)
+
+
+def split_data_indexes(data):
     print("\nSplitting Data:")
     X = np.arange(len(data))
     y = np.array(data[data.columns[0]])
@@ -45,7 +54,8 @@ def split_data(data):
 
     print("*** Data split into: train (", per(train_indexes, data), "), validation (", per(validation_indexes, data), \
           "), test (", per(test_indexes,data), ") ***")
-    return data.iloc[train_indexes], data.iloc[validation_indexes], data.iloc[test_indexes]
+    return train_indexes, validation_indexes, test_indexes
+    # return data.iloc[train_indexes], data.iloc[validation_indexes], data.iloc[test_indexes]
 
 
 ################################################################################
@@ -113,42 +123,76 @@ def remove_negative_values_from_data(data):
 ################################################################################
 # 3.a. Imputation
 ################################################################################
-def fill_missing_values(data):
+def fill_set_values(data, train_no_nan):
     sum_filled = 0
-    print("\nFilling missing values for:")
+    data_nonan = data.dropna()
 
     for i, feature in enumerate(data.columns):
         samples_with_missing_values = np.where(data[feature].isnull())[0]
         if len(samples_with_missing_values):
-            for j in range(len(data[feature])):
-                if data[feature][j] != np.nan:
-                    if isinstance(data[feature][j], float):
-                        imp_mean = SimpleImputer(missing_values=np.nan, strategy='median')
-                    else:
-                        imp_mean = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
+            print("dafuqsy")
+            if isinstance(data_nonan[feature][0], float):
+                imp = SimpleImputer(missing_values=np.nan, strategy='median')
+            else:
+                imp = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
+            print("dafuqsy")
 
-                    filled = imp_mean.fit_transform(data)
+            trained_imp = imp.fit(train_no_nan)
+            filled = trained_imp.transform(data)
 
-                    print(feature, end=", ")
-                    break
+            # for j in range(len(data[feature])):
+            #     print("dafuqsy")
+            #     if data[feature][j] == np.nan:
+            #         continue
+            #     print("dafuqsy")
+            #         if isinstance(data[feature][j], float):
+            #             imp = SimpleImputer(missing_values=np.nan, strategy='median')
+            #         else:
+            #             imp = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
+            #
+            #         trained_imp = imp.fit(train_no_nan)
+            #         filled = trained_imp.transform(data)
+            #     break
 
         for missing_value in samples_with_missing_values:
             data.ix[missing_value, feature] = filled[missing_value][i]
             sum_filled += 1
+    return sum_filled, set
 
-    print("\n*** Filled ", sum_filled, " values ***")
-    return data
+
+def fill_missing_values(train, validation, test):
+    sum_filled = 0
+    print("\nFilling missing values for:")
+
+    train_no_nan = train.dropna()
+    # imp_median = create_simple_imputer('median')
+    # imp_most_frequent = create_simple_imputer('most_frequent')
+
+    print("train", end=", ")
+    filled, train = fill_set_values(train, train_no_nan)
+    sum_filled += filled
+
+    print("validation", end=", ")
+    filled, validation = fill_set_values(validation, train_no_nan)
+    sum_filled += filled
+
+    print("test")
+    filled, test = fill_set_values(test, train_no_nan)
+    sum_filled += filled
+
+    print("*** Filled ", sum_filled, " values ***")
+    return train, validation, test
 
 
 ################################################################################
 # 3.b. Data Cleansing - Outlier Detection
 ################################################################################
-def add_outliers_indicator_vector(data):
-    print("\nAdding outliers indicator vector")
+def filter_outliers(data):
+    print("\nFiltering outliers:")
 
     clf = LocalOutlierFactor(n_neighbors=20, contamination=0.1)
     outliers_vector = clf.fit_predict(data) # inlier == 1 , outlier == -1
-
+    print(np.where(outliers_vector < 0)[0])
     data['outlier_indicator'] = outliers_vector
     data['outlier_indicator'] = data['outlier_indicator'].map({1: 0, -1: 1}).astype(int)
 
@@ -346,25 +390,27 @@ def mutual_info_k_best(data):
 def main():
     data = load_data('ElectionsData_orig.csv')
 
-    train, validation, test = split_data(data)
+    train_indexes, validation_indexes, test_indexes = split_data_indexes(data)
 
+    original_train, original_validation, original_test = get_subsets(data, train_indexes, validation_indexes, \
+                                                                     test_indexes)
     #TODO: save_to_file(train, validation, test)
 
     data = modify_types(data)
     data = remove_negative_values_from_data(data)
 
-    data = fill_missing_values(data)
-
+    train, validation, test = get_subsets(data, train_indexes, validation_indexes, test_indexes)
+    train, validation, test = fill_missing_values(train, validation, test)
 
     #TODO: create train without otliers for feature selection
-    # add_outliers_indicator_vector
+    train_without_outliers = filter_outliers(train)
 
     #call_relief(data)
-    data = variance_threshold_filter(data, 0.1)
-    data = mutual_info_k_best(data)
-    data = mutual_info_k_best(data)
-
-    normalize_data(data)
+    # data = variance_threshold_filter(data, 0.1)
+    # data = mutual_info_k_best(data)
+    # data = mutual_info_k_best(data)
+    #
+    # normalize_data(data)
 
     # mutual_info_k_best(data)
     # variance_threshold_filter(data, 0.1)

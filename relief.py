@@ -12,9 +12,9 @@ def get_nearhit(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
 
-    num_features = len(X.keys())
-    # Iterate the features.
-    for i in range(num_features):
+    num_samples = len(X[X.keys()[0]])
+    # Iterate the samples.
+    for i in range(num_samples):
         # Check if it's a miss.
         if y.iloc[i] != y.iloc[p]:
             cur_dist = euclidean(X, i, p)
@@ -28,9 +28,9 @@ def get_nearmiss(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
 
-    num_features = len(X.keys())
-    # Iterate the features.
-    for i in range(num_features):
+    num_samples = len(X[X.keys()[0]])
+    # Iterate the samples.
+    for i in range(num_samples):
         # Check if it's a hit.
         if y.iloc[i] == y.iloc[p]:
             cur_dist = euclidean(X, i, p)

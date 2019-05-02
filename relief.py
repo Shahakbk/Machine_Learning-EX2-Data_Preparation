@@ -41,7 +41,7 @@ def get_nearmiss(X, y, p):
     return min_idx if min_idx != np.inf else p
 
 def run_algorithm(X, y, threshold, num_iter=20):
-    # Init an empty weigths vector.
+    # Init an empty weights vector.
     weights = np.zeros(len(X.keys()))
     features = set([])
 

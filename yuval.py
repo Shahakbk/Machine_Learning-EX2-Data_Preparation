@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.impute import SimpleImputer
 from scipy.stats import normaltest
 from scipy.stats import kurtosis
@@ -19,6 +20,32 @@ def load_data(datapath):
     data = data.replace([np.inf, -np.inf], np.nan)
 
     return data
+
+
+################################################################################
+# 4. Data Splitting
+################################################################################
+def per(a,b):
+    return len(a) / len(b)
+
+def split_data(data):
+    print("\nSplitting Data:")
+    X = np.arange(len(data))
+    y = np.array(data[data.columns[0]])
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.4)
+
+    for train_index, test_index in sss.split(X, y):
+        train_indexes, X = X[train_index], X[test_index]
+        y = y[test_index]
+
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.5)
+
+    for validation_index, test_index in sss.split(X, y):
+        validation_indexes, test_indexes = X[validation_index], X[test_index]
+
+    print("*** Data split into: train (", per(train_indexes, data), "), validation (", per(validation_indexes, data), \
+          "), test (", per(test_indexes,data), ") ***")
+    return data.iloc[train_indexes], data.iloc[validation_indexes], data.iloc[test_indexes]
 
 
 ################################################################################
@@ -319,13 +346,20 @@ def mutual_info_k_best(data):
 def main():
     data = load_data('ElectionsData_orig.csv')
 
-    # print(data.columns.size)
+    train, validation, test = split_data(data)
+
+    #TODO: save_to_file(train, validation, test)
+
     data = modify_types(data)
     data = remove_negative_values_from_data(data)
 
     data = fill_missing_values(data)
 
-    # call_relief(data)
+
+    #TODO: create train without otliers for feature selection
+    # add_outliers_indicator_vector
+
+    #call_relief(data)
     data = variance_threshold_filter(data, 0.1)
     data = mutual_info_k_best(data)
     data = mutual_info_k_best(data)

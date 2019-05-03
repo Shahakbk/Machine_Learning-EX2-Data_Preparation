@@ -54,6 +54,7 @@ def split_data(data):
 
         return train, train_indices, validation, val_indices, test, test_indices
 
+
 def export_sets(train, validation, test, raw):
     if raw == 'yes':
         addition = '_raw'
@@ -63,6 +64,7 @@ def export_sets(train, validation, test, raw):
     pd.DataFrame.to_csv(train, str('train' + addition + '.csv'))
     pd.DataFrame.to_csv(validation, str('validation' + addition + '.csv'))
     pd.DataFrame.to_csv(test, str('test' + addition + '.csv'))
+
 
 ################################################################################
 # 3.c. Data Cleansing - Type/Value modification
@@ -78,7 +80,7 @@ def categorical_to_int(data, category_name, temp_name):
     return data
 
 
-def modify_types(data):
+def modify_set_types(data):
     temp_name = 'temp'
     print("\nModifying types for:")
 
@@ -94,6 +96,10 @@ def modify_types(data):
     data = data.drop(['temp'], axis=1)
     print("\n*** Done modifying types ***")
     return data
+
+
+def modify_types(train, validation, test):
+    return modify_set_types(train), modify_set_types(validation), modify_set_types(test)
 
 
 ################################################################################
@@ -127,64 +133,79 @@ def remove_negative_values_from_data(data):
 
 
 ################################################################################
-# 3.a. Imputation
+# 3.a. Imputation                                                              #
 ################################################################################
-def fill_set_values(data, train_no_nan):
-    sum_filled = 0
-    data_nonan = data.dropna()
+def find_correlations_between_features(data, threshold=0.9):
+    corr = data.corr(method='pearson', min_periods=1)
+    corr = corr.abs()  # Use only positive values
+    np.fill_diagonal(corr.values, 0)  # Ignore correlation with self
+    dict = {}
 
-    for i, feature in enumerate(data.columns):
-        samples_with_missing_values = np.where(data[feature].isnull())[0]
-        if len(samples_with_missing_values):
-            print("dafuqsy")
-            pd.DataFrame.to_csv(data_nonan, 'nonan.csv')
-            if isinstance(data_nonan[feature][0], float):
-                imp = SimpleImputer(missing_values=np.nan, strategy='median')
-            else:
-                imp = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
-            print("dafuqsy")
+    for feature in corr.keys():
+        if corr[feature].max() > threshold:
+            best_feature = corr[feature].idxmax()
+            dict[feature] = best_feature
+        else:
+            dict[feature] = 0
 
-            trained_imp = imp.fit(train_no_nan)
-            filled = trained_imp.transform(data)
+    return dict
 
-            # for j in range(len(data[feature])):
-            #     print("dafuqsy")
-            #     if data[feature][j] == np.nan:
-            #         continue
-            #     print("dafuqsy")
-            #         if isinstance(data[feature][j], float):
-            #             imp = SimpleImputer(missing_values=np.nan, strategy='median')
-            #         else:
-            #             imp = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
-            #
-            #         trained_imp = imp.fit(train_no_nan)
-            #         filled = trained_imp.transform(data)
-            #     break
 
-        for missing_value in samples_with_missing_values:
-            data.ix[missing_value, feature] = filled[missing_value][i]
-            sum_filled += 1
-    return sum_filled, set
+def get_discrete_continuous_features(data, discrete_threshold=13):
+    unique_values = data.drop(['Vote'], axis=1).nunique()
+    discrete_features = set([])
+    continuous_features = set([])
+
+    for i in range(len(unique_values)):
+        feature = data.columns[i]
+        if unique_values[i] > discrete_threshold:
+            continuous_features.add(feature)
+        else:
+            discrete_features.add(feature)
+
+    return discrete_features, continuous_features
+
+
+def fill_set_missing_values(set, data):
+    corr = find_correlations_between_features(data)
+    corr = {} # TODO temp
+    discrete_features, continuous_features = get_discrete_continuous_features(set)
+    sum_filled = set.isna().sum().sum()
+
+    for feature in set.keys(): # TODO temp
+        corr[feature] = 0
+
+    for feature in set.keys():
+        if corr[feature] != 0:
+            None
+            # set[feature] = set[feature].fillna() # TODO temp
+        elif continuous_features.__contains__(feature):
+            median = data[feature].median()
+            set[feature] = set[feature].fillna(median)
+        else:
+            most_common = data[feature].value_counts().idxmax()
+            set[feature] = set[feature].fillna(most_common)
+
+    return set, sum_filled
 
 
 def fill_missing_values(train, validation, test):
     sum_filled = 0
     print("\nFilling missing values for:")
 
+    discrete_features, continuous_features = get_discrete_continuous_features(train)
     train_no_nan = train.dropna()
-    # imp_median = create_simple_imputer('median')
-    # imp_most_frequent = create_simple_imputer('most_frequent')
 
     print("train", end=", ")
-    filled, train = fill_set_values(train, train_no_nan)
+    train, filled = fill_set_missing_values(train, train_no_nan)
     sum_filled += filled
 
     print("validation", end=", ")
-    filled, validation = fill_set_values(validation, train_no_nan)
+    validation, filled = fill_set_missing_values(validation, train_no_nan)
     sum_filled += filled
 
     print("test")
-    filled, test = fill_set_values(test, train_no_nan)
+    test, filled = fill_set_missing_values(test, train_no_nan)
     sum_filled += filled
 
     print("*** Filled ", sum_filled, " values ***")
@@ -309,6 +330,7 @@ def mutual_info_k_best(data):
     print("\n*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
     return data
 
+
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
 ################################################################################
@@ -401,13 +423,14 @@ def main():
     train, train_indices, validation, validation_indices, test, test_indices = split_data(data)
     export_sets(train, validation, test, raw="yes")
 
-    train = modify_types(train)
+    train, validation, test = modify_types(train, validation, test)
+    train, validation, test = fill_missing_values(train, validation, test)
+    train = filter_outliers(train)
     train = remove_negative_values_from_data(train)
 
 
-
     #TODO: create train without outliers for feature selection
-    train_without_outliers = filter_outliers(train)
+    #train_without_outliers = filter_outliers(train)
 
     #call_relief(data)
     # data = variance_threshold_filter(data, 0.1)

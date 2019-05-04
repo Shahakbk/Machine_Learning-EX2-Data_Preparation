@@ -357,25 +357,27 @@ def mutual_info_k_best(data):
     # print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
     # return data
 
+
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
 ################################################################################
 def euclidean(X, i, j):
     sum = 0
-    num_features = len(X[0])
+    num_features = len(X.keys())
     for idx in range(num_features):
-        sum = sum + (X[i][idx] - X[j][idx]) ** 2
+        sum = sum + (X.loc[i][idx] - X.loc[j][idx]) ** 2
     return np.sqrt(sum)
+
 
 def get_nearhit(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
+    num_samples = len(X[X.keys()[0]])
 
-    num_features = len(X[0])
-    # Iterate the features.
-    for i in range(num_features):
-        # Check if it's a miss.
-        if y[i] != y[p]:
+    # Iterate the samples.
+    for i in range(num_samples):
+        # Check if it's a hit.
+        if y[i] == y[p]:
             cur_dist = euclidean(X, i, p)
             if cur_dist < min_dist:
                 min_dist = cur_dist
@@ -386,12 +388,12 @@ def get_nearhit(X, y, p):
 def get_nearmiss(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
+    num_samples = len(X[X.keys()[0]])
 
-    num_features = len(X[0])
-    # Iterate the features.
-    for i in range(num_features):
-        # Check if it's a hit.
-        if y[i] == y[p]:
+    # Iterate the samples.
+    for i in range(num_samples):
+        # Check if it's a miss.
+        if y[i] != y[p]:
             cur_dist = euclidean(X, i, p)
             if cur_dist < min_dist:
                 min_dist = cur_dist
@@ -400,8 +402,8 @@ def get_nearmiss(X, y, p):
     return min_idx if min_idx != np.inf else p
 
 def relief(X, y, threshold, num_iter=20):
-    # Init an empty weigths vector.
-    weights = np.zeros(len(X[0]))
+    # Init an empty weights vector.
+    weights = np.zeros(len(X.keys()))
     features = set([])
 
     # Algorithm iterations:
@@ -412,19 +414,20 @@ def relief(X, y, threshold, num_iter=20):
         nearhit = get_nearhit(X, y, p)
         nearmiss = get_nearmiss(X, y, p)
 
-
         # Iterating the features and updating the weights.
-        for i in range(len(X[0])):
-            weights[i] = weights[i] + (X[p][i] - X[nearmiss][i]) ** 2 - (X[p][i] - X[nearhit][i]) ** 2
+        for i in range(len(X.keys())):
+            weights[i] = weights[i] + (X.loc[p][i] - X.loc[nearmiss][i]) ** 2 - (X.loc[p][i] - X.loc[nearhit][i]) ** 2
 
     # Returns a set of the best features.
     idx = 0
-    for i in range(len(X[0])):
-        if weights[idx] > threshold:
-            features.add(i + 1)
+    for feature in X.keys():
+        if weights[idx] < threshold:
+            features.add(idx)
         idx = idx + 1
 
+    print("weights are: ", weights)
     return features
+
 
 def call_relief(data):
     print("Using relief for feature selection:")
@@ -432,12 +435,69 @@ def call_relief(data):
 
     scaled_data = normalize_data(data)
 
-    train_data_X = scaled_data.drop(['Vote'], axis=1).values
-    train_data_Y = scaled_data.Vote.values
-
-    print(relief(train_data_X, train_data_Y, 0, num_iter=1000))
+    train_data_X = scaled_data.drop(['Vote'], axis=1)
+    train_data_Y = scaled_data['Vote']
 
     print("\n*** Done using relief. Filtered ", size_before - data.columns.size, " features ***")
+    return data
+
+
+################################################################################
+# Bonus for Pairs A. SFS
+################################################################################
+# threshold is a parameter to mark the minimum required score difference to continue iterating.
+def sfs(X_train, y_train, X_test, y_test, base_model, threshold=0.000001):
+    best_features = set([])
+    features = set(X_train.keys())
+
+    max_score = -np.inf
+    diff = abs(max_score)
+    while len(features) > 0 and diff > threshold:
+        cur_score = max_score
+
+        # Indicator for a change in the final set.
+        changed = False
+        best_feature = None
+
+        for feature in features:
+
+            best_features.add(feature)
+            # Train the model on the train set.
+            base_model.fit((X_train[best_features]).astype(np.float), y_train)
+            # Evaluate based on the test set.
+            tmp_score = base_model.score(X_test[best_features], y_test)
+            best_features.remove(feature)
+
+            if max_score < tmp_score:
+                max_score = tmp_score
+                best_feature = feature
+                changed = True
+
+        # After evaluating the model with all the features, pick the best one.
+        if changed:
+            best_features.add(best_feature)
+            features.discard(best_feature)
+
+        diff = abs(max_score - cur_score)
+
+    return best_features
+
+
+def call_sfs(data, test, base_model):
+    print("Using SFS for feature selection:")
+    size_before = data.columns.size
+
+    train_data_X = data.drop(['Vote'], axis=1)
+    train_data_Y = data.Vote.values
+
+    test_data_X = test.drop(['Vote'], axis=1)
+    test_data_Y = test.Vote.values
+
+    filtered = sfs(train_data_X, train_data_Y, test_data_X, test_data_Y, base_model=base_model)
+    data = data.drop(list(filtered), axis=1)
+    print(filtered)
+
+    print("\n*** Done using SFS. Filtered ", size_before - data.columns.size, " features ***")
     return data
 
 

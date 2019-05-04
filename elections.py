@@ -7,6 +7,9 @@ from scipy.stats import kurtosis
 from sklearn.neighbors import LocalOutlierFactor
 from matplotlib import pyplot
 from sklearn.feature_selection import VarianceThreshold
+from sklearn.feature_selection import SelectFwe
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif, chi2
 import random
@@ -200,9 +203,6 @@ def filter_outliers(data):
     data = data.iloc[np.where(outliers_vector > 0)[0]]
     data = data.reset_index(drop=True)
 
-    # print(np.where(outliers_vector < 0)[0])
-    # data['outlier_indicator'] = outliers_vector
-    # data['outlier_indicator'] = data['outlier_indicator'].map({1: 0, -1: 1}).astype(int)
     print("*** Dropped ", np.where(outliers_vector < 0)[0].size, " outliers out of ", original_size, "examples ***")
     return data
 
@@ -266,7 +266,7 @@ def normalize_data(data):
 # 4. Feature Selection
 ################################################################################
 def variance_threshold_filter(data, p):
-    print("Using variance threshold for feature selection with p = ", p)
+    print("\nUsing variance threshold for feature selection with p = ", p)
     size_before = data.columns.size
 
     selector = VarianceThreshold(threshold=p)
@@ -283,31 +283,73 @@ def variance_threshold_filter(data, p):
     return data
 
 
-def mutual_info_k_best(data):
-    print("Using mutual info k-best for feature selection:")
+def feature_importance_forest(data):
+    print("\nUsing feature importance forest for feature selection:")
     size_before = data.columns.size
 
     train_data_X = data.drop(['Vote'], axis=1).values
     train_data_Y = data.Vote.values
 
-    univariate_filter = SelectKBest(mutual_info_classif, k=30).fit(train_data_X, train_data_Y)
-    # univariate_filter = SelectKBest(mutual_info_classif, k=23).fit(train_data_X, train_data_Y)
-    # print(univariate_filter.scores_)
+    classifier = ExtraTreesClassifier(n_estimators=100).fit(train_data_X, train_data_Y)
+    model = SelectFromModel(classifier, threshold=0.0075, prefit=True)
+
+    print("Selecting Features: ", model.get_support(True))
+
     deleted = 0
-    for i, is_chosen in enumerate(univariate_filter.get_support(False)):
+    for i, is_chosen in enumerate(model.get_support(indices=False)):
         if is_chosen:
             continue
 
         data = data.drop([data.columns[i + 1 - deleted]], axis=1)
         deleted += 1
 
-    # train_data_X = data.drop(['Vote'], axis=1).values
-    # train_data_Y = data.Vote.values
-    #
-    # univariate_filter = SelectKBest(mutual_info_classif, k=23).fit(train_data_X, train_data_Y)
-    # print(univariate_filter.scores_)
+    print("*** Done using feature importance forest. Filtered ", size_before - data.columns.size, " features ***")
+    return data
 
-    print("\n*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
+
+def select_fwe(data):
+    print("\nUsing select_fwe for feature selection:")
+    size_before = data.columns.size
+
+    train_data_X = data.drop(['Vote'], axis=1).values
+    train_data_Y = data.Vote.values
+
+    univariate_filter = SelectFwe(chi2, alpha=0.001).fit(train_data_X, train_data_Y)
+
+    print("Selecting Features: ", univariate_filter.get_support(True))
+
+    deleted = 0
+    for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
+        if is_chosen:
+            continue
+
+        data = data.drop([data.columns[i + 1 - deleted]], axis=1)
+        deleted += 1
+
+    print("*** Done using select fwe. Filtered ", size_before - data.columns.size, " features ***")
+    return data
+
+
+def mutual_info_k_best(data):
+    print("\nUsing mutual info k-best for feature selection:")
+    size_before = data.columns.size
+
+    train_data_X = data.drop(['Vote'], axis=1).values
+    train_data_Y = data.Vote.values
+
+    univariate_filter = SelectKBest(mutual_info_classif, k=22).fit(train_data_X, train_data_Y)
+    print(univariate_filter.scores_)
+    print("Selecting Features: ", univariate_filter.get_support(True))
+
+    deleted = 0
+    for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
+        if is_chosen:
+            continue
+
+        data = data.drop([data.columns[i + 1 - deleted]], axis=1)
+        deleted += 1
+
+    print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
     return data
 
 ################################################################################
@@ -396,14 +438,15 @@ def mutual_info_k_best(data):
 # Main
 ################################################################################
 def main():
+    np.set_printoptions(precision=3, suppress=True)
+
     data = load_data('ElectionsData_orig.csv')
     pd.DataFrame.to_csv(data, 'data.csv')
 
     train_indices, validation_indices, test_indices = split_data_indices(data)
 
-    original_train, original_validation, original_test = get_subsets(data, train_indices, validation_indices, \
-                                                                     test_indices)
-    save_to_file(original_train, original_validation, original_test, '_raw')
+    train, validation, test = get_subsets(data, train_indices, validation_indices, test_indices)
+    save_to_file(train, validation, test, '_raw')
 
     data = modify_types(data)
     data = remove_negative_values_from_data(data)
@@ -416,14 +459,12 @@ def main():
     #TODO: Relief train_without_outliers
     #TODO: SFS train_without_outliers
 
-    train_without_outliers = variance_threshold_filter(train_without_outliers, 0.1)
-    train_without_outliers = mutual_info_k_best(train_without_outliers)
-
+    # train_without_outliers = variance_threshold_filter(train_without_outliers, 0.1)
+    train_without_outliers = feature_importance_forest(train_without_outliers)
+    # train_without_outliers = select_fwe(train_without_outliers)
+    # train_without_outliers = mutual_info_k_best(train_without_outliers)
 
     # normalize_data(data)
-
-    # mutual_info_k_best(data)
-    # variance_threshold_filter(data, 0.1)
 
     # print(data.columns.size)
     # print("\n", data.head())

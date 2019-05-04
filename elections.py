@@ -424,7 +424,6 @@ def relief(X, y, threshold, num_iter=20):
             features.add(i + 1)
         idx = idx + 1
 
-    print("weights are: ", weights)
     return features
 
 def call_relief(data):

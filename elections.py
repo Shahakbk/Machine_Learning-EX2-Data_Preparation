@@ -219,48 +219,68 @@ def min_max_normalization(feature, feature_min, feature_max):
     return 2 * ((feature - feature_min) / (feature_max - feature_min)) - 1
 
 
-def normalize_data(data):
-    print("\nNormalizing feature number:")
+def create_normalization_table(data):
+    print("\nCreating normalization table.")
+    norm_table = pd.DataFrame(columns=['Type', 'Min', 'Max', 'Mean', 'STD'])
 
     stat, p = normaltest(data)  # might need to turn train_set to np array
     alpha = 1e-200
     is_normal = (p > alpha)
 
-    for i, feature in enumerate(data):
-        # print("before: ", stat[i], p[i], is_normal[i])
-        # pyplot.hist(data[feature])
-        # pyplot.show()
+    for i, feature in enumerate(data.keys()):
+
+        if feature == 'Vote':
+            continue
+
+        if is_normal[i]:
+            feature_mean = data[feature].mean()
+            feature_std = data[feature].std()
+            norm_table.loc[i] = ['mean', None, None, feature_mean, feature_std]
+
+        else:
+            feature_min = data[feature].min()
+            feature_max = data[feature].max()
+            norm_table.loc[i] = ['most common', feature_min, feature_max, None, None]
+
+    return norm_table
+
+
+def normalize_set(set, norm_table):
+    print("Normalizing feature number:")
+
+    for i, feature in enumerate(set.keys()):
 
         print(i, end=' ')
         if feature == 'Vote':
             continue
 
-        # k = kurtosis(data[feature])
-
-        # is_binary = (data[feature].nunique() == 2)
-        # if is_binary:
-        #     continue
-
-        if is_normal[i]:
-            feature_mean = data[feature].mean()
-            feature_std = data[feature].std()
-            data[feature] = min_max_normalization(data[feature], feature_mean, feature_std)
-
+        if norm_table['Type'][i] == 'mean':
+            feature_mean = norm_table['Mean'][i]
+            feature_std = norm_table['STD'][i]
+            set[feature] = z_score_normalization(set[feature], feature_mean, feature_std)
         else:
-            feature_min = data[feature].min()
-            feature_max = data[feature].max()
-            data[feature] = z_score_normalization(data[feature], feature_min, feature_max)
+            feature_min = norm_table['Min'][i]
+            feature_max = norm_table['Max'][i]
+            set[feature] = min_max_normalization(set[feature], feature_min, feature_max)
 
-        # feature_min = data[feature].min()
-        # feature_max = data[feature].max()
-        # data[feature] = z_score_normalization(data[feature], feature_min, feature_max)
+    return set
 
-        # print("after")
-        # pyplot.hist(data[feature])
-        # pyplot.show()
 
-    print("\n*** Done normalizing ***")
-    return data
+def normalize_data(train, validation, test, data):
+    print("\nNormalizing data:")
+    norm_table = create_normalization_table(data)
+
+    print("\nNormalizing train set:")
+    train = normalize_set(train, norm_table)
+
+    print("\n\nNormalizing validation set:")
+    validation = normalize_set(validation, norm_table)
+
+    print("\n\nNormalizing test set:")
+    test = normalize_set(test, norm_table)
+
+    print("\n\n*** Done normalizing ***")
+    return train, validation, test
 
 
 ################################################################################
@@ -431,10 +451,12 @@ def call_relief(data):
     print("Using relief for feature selection:")
     size_before = data.columns.size
 
-    scaled_data = normalize_data(data)
+    #scaled_data = normalize_data(data)
 
-    train_data_X = scaled_data.drop(['Vote'], axis=1)
-    train_data_Y = scaled_data['Vote']
+    #train_data_X = scaled_data.drop(['Vote'], axis=1)
+    #train_data_Y = scaled_data['Vote']
+    train_data_X = data.drop(['Vote'], axis=1)
+    train_data_Y = data['Vote']
 
     filtered = relief(train_data_X, train_data_Y, 0, num_iter=5) # TODO set num_iter
     #data = data.drop(list(filtered), axis=1) # TODO set in order for relief to filter
@@ -522,6 +544,7 @@ def main():
     train, validation, test = fill_missing_values(train, validation, test)
 
     train_without_outliers = filter_outliers(train)
+    train, validation, test = normalize_data(train, validation, test, train_without_outliers)
 
     filter_vector = np.zeros((data.columns.size - 1,), dtype=int)
     #TODO: Relief train_without_outliers

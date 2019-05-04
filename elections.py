@@ -9,8 +9,16 @@ from matplotlib import pyplot
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif, chi2
-from sklearn.model_selection import train_test_split
 import random
+
+
+################################################################################
+# 0. Utils
+################################################################################
+def safe_dropna(data):
+    data = data.dropna()
+    data = data.reset_index(drop=True)
+    return data
 
 
 ################################################################################
@@ -26,45 +34,52 @@ def load_data(datapath):
 ################################################################################
 # 4. Data Splitting
 ################################################################################
-def split_data(data):
-        y = data['Vote']
-        X = data.drop(['Vote'], axis=1)
-
-        indices = range(X.shape[0])
-        X_train, X_tmp, y_train, y_tmp, train_indices, tmp_indices = train_test_split(X, y, indices, test_size=0.4,
-                                                                                      stratify=y)
-        indices = range(X_tmp.shape[0])
-        X_test, X_val, y_test, y_val, test_indices, val_indices = train_test_split(X_tmp, y_tmp, indices, test_size=0.5,
-                                                                                   random_state=1)
-
-        # Correcting the indices of the train & validation sets.
-        for i in range(len(test_indices)):
-            test_indices[i] = tmp_indices[test_indices[i]]
-
-        for i in range(len(val_indices)):
-            val_indices[i] = tmp_indices[val_indices[i]]
-
-        train = pd.concat([X_train, y_train], axis=1)
-        validation = pd.concat([X_val, y_val], axis=1)
-        test = pd.concat([X_test, y_test], axis=1)
-
-        train = train.reset_index(drop=True)
-        validation = validation.reset_index(drop=True)
-        test = test.reset_index(drop=True)
-
-        return train, train_indices, validation, val_indices, test, test_indices
+def per(a,b):
+    return len(a) / len(b)
 
 
-def export_sets(train, validation, test, raw):
-    if raw == 'yes':
-        addition = '_raw'
-    else:
-        addition = ''
+def choose_subset(data, indices):
+    data = data.iloc[indices]
+    data = data.reset_index(drop=True)
+    return data
 
-    pd.DataFrame.to_csv(train, str('train' + addition + '.csv'))
-    pd.DataFrame.to_csv(validation, str('validation' + addition + '.csv'))
-    pd.DataFrame.to_csv(test, str('test' + addition + '.csv'))
 
+def get_subsets(data, train_indices, validation_indices, test_indices):
+    return choose_subset(data, train_indices), choose_subset(data, validation_indices), choose_subset(data, test_indices)
+
+
+def split_data_indices(data):
+    print("\nSplitting Data:")
+    X = np.arange(len(data))
+    y = np.array(data[data.columns[0]])
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3)
+
+    for train_index, test_index in sss.split(X, y):
+        train_indices, X = X[train_index], X[test_index]
+        y = y[test_index]
+
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.4)
+
+    for validation_index, test_index in sss.split(X, y):
+        validation_indices, test_indices = X[validation_index], X[test_index]
+
+    print("*** Data split into: train (", per(train_indices, data), "), validation (", per(validation_indices, data), \
+          "), test (", per(test_indices,data), ") ***")
+    return train_indices, validation_indices, test_indices
+
+
+################################################################################
+# 5. Saving Data
+################################################################################
+def save_to_file(train, validation, test, tag=''):
+    print("\nSaving Data With Tag: '", tag, "'")
+
+    pd.DataFrame.to_csv(train, str('train' + tag + '.csv'))
+    pd.DataFrame.to_csv(validation, str('validation' + tag + '.csv'))
+    pd.DataFrame.to_csv(test, str('test' + tag + '.csv'))
+
+    print("*** Data Saved Into: train", tag, ".csv, validation", tag, ".csv, test", tag, ".csv ***")
+    return
 
 ################################################################################
 # 3.c. Data Cleansing - Type/Value modification
@@ -75,31 +90,24 @@ def categorical_to_int(data, category_name, temp_name):
 
     samples_with_missing_values = np.where(data[temp_name].isnull())[0]
     for i in samples_with_missing_values:
-        data.ix[i][category_name] = np.nan
+        data.ix[i, category_name] = np.nan
 
     return data
 
 
-def modify_set_types(data):
-    temp_name = 'temp'
+def modify_types(data):
     print("\nModifying types for:")
+    temp_name = 'temp'
+    data_nonan = safe_dropna(data)
 
     for feature in data.columns:
-        for i in range(len(data[feature])):
-            if data[feature][i] != np.nan:
-                if isinstance(data[feature][i], str):
-                    categorical_to_int(data, feature, temp_name)
-                    print(feature, end=', ')
-
-                break
+        if isinstance(data_nonan[feature][0], str):
+            categorical_to_int(data, feature, temp_name)
+            print(feature, end=', ')
 
     data = data.drop(['temp'], axis=1)
     print("\n*** Done modifying types ***")
     return data
-
-
-def modify_types(train, validation, test):
-    return modify_set_types(train), modify_set_types(validation), modify_set_types(test)
 
 
 ################################################################################
@@ -109,14 +117,15 @@ def remove_negative_values_from_feature(data, feature):
     negative_values_indices = np.where(data[feature] < 0)[0]
 
     for negative_value_index in negative_values_indices:
-        data.ix[negative_value_index][feature] = np.nan
+        data.ix[negative_value_index, feature] = np.nan
 
     return data[feature], negative_values_indices.size
 
 
 def remove_negative_values_from_data(data):
-    sum_removed = 0
     print("\nRemoving negative values for:")
+    sum_removed = 0
+
     for feature in data.columns:
         for i in range(len(data[feature])):
             if data[feature][i] != np.nan:
@@ -133,79 +142,45 @@ def remove_negative_values_from_data(data):
 
 
 ################################################################################
-# 3.a. Imputation                                                              #
+# 3.a. Imputation
 ################################################################################
-def find_correlations_between_features(data, threshold=0.9):
-    corr = data.corr(method='pearson', min_periods=1)
-    corr = corr.abs()  # Use only positive values
-    np.fill_diagonal(corr.values, 0)  # Ignore correlation with self
-    dict = {}
+def fill_set_values(data, train_no_nan):
+    sum_filled = 0
+    data_nonan = safe_dropna(data)
 
-    for feature in corr.keys():
-        if corr[feature].max() > threshold:
-            best_feature = corr[feature].idxmax()
-            dict[feature] = best_feature
-        else:
-            dict[feature] = 0
+    for i, feature in enumerate(data.columns):
+        samples_with_missing_values = np.where(data[feature].isnull())[0]
+        if len(samples_with_missing_values):
+            if isinstance(data_nonan[feature][0], str):
+                imp = SimpleImputer(missing_values=np.nan, strategy='most_frequent')
+            else:
+                imp = SimpleImputer(missing_values=np.nan, strategy='median')
 
-    return dict
+            trained_imp = imp.fit(train_no_nan)
+            filled = trained_imp.transform(data)
 
-
-def get_discrete_continuous_features(data, discrete_threshold=13):
-    unique_values = data.drop(['Vote'], axis=1).nunique()
-    discrete_features = set([])
-    continuous_features = set([])
-
-    for i in range(len(unique_values)):
-        feature = data.columns[i]
-        if unique_values[i] > discrete_threshold:
-            continuous_features.add(feature)
-        else:
-            discrete_features.add(feature)
-
-    return discrete_features, continuous_features
-
-
-def fill_set_missing_values(set, data):
-    corr = find_correlations_between_features(data)
-    corr = {} # TODO temp
-    discrete_features, continuous_features = get_discrete_continuous_features(set)
-    sum_filled = set.isna().sum().sum()
-
-    for feature in set.keys(): # TODO temp
-        corr[feature] = 0
-
-    for feature in set.keys():
-        if corr[feature] != 0:
-            None
-            # set[feature] = set[feature].fillna() # TODO temp
-        elif continuous_features.__contains__(feature):
-            median = data[feature].median()
-            set[feature] = set[feature].fillna(median)
-        else:
-            most_common = data[feature].value_counts().idxmax()
-            set[feature] = set[feature].fillna(most_common)
-
-    return set, sum_filled
+        for missing_value in samples_with_missing_values:
+            data.ix[missing_value, feature] = filled[missing_value][i]
+            sum_filled += 1
+    return sum_filled, data
 
 
 def fill_missing_values(train, validation, test):
     sum_filled = 0
     print("\nFilling missing values for:")
 
-    discrete_features, continuous_features = get_discrete_continuous_features(train)
-    train_no_nan = train.dropna()
+    train_no_nan = safe_dropna(train)
 
     print("train", end=", ")
-    train, filled = fill_set_missing_values(train, train_no_nan)
+    filled, train = fill_set_values(train, train_no_nan)
     sum_filled += filled
 
     print("validation", end=", ")
-    validation, filled = fill_set_missing_values(validation, train_no_nan)
+    filled, validation = fill_set_values(validation, train_no_nan)
     sum_filled += filled
 
     print("test")
-    test, filled = fill_set_missing_values(test, train_no_nan)
+    filled, test = fill_set_values(test, train_no_nan)
     sum_filled += filled
 
     print("*** Filled ", sum_filled, " values ***")
@@ -217,14 +192,18 @@ def fill_missing_values(train, validation, test):
 ################################################################################
 def filter_outliers(data):
     print("\nFiltering outliers:")
+    original_size = len(data)
 
     clf = LocalOutlierFactor(n_neighbors=20, contamination=0.1)
     outliers_vector = clf.fit_predict(data) # inlier == 1 , outlier == -1
-    print(np.where(outliers_vector < 0)[0])
-    data['outlier_indicator'] = outliers_vector
-    data['outlier_indicator'] = data['outlier_indicator'].map({1: 0, -1: 1}).astype(int)
 
-    print("\n*** Marked ", np.where(outliers_vector < 0)[0].size, " as outliers***")
+    data = data.iloc[np.where(outliers_vector > 0)[0]]
+    data = data.reset_index(drop=True)
+
+    # print(np.where(outliers_vector < 0)[0])
+    # data['outlier_indicator'] = outliers_vector
+    # data['outlier_indicator'] = data['outlier_indicator'].map({1: 0, -1: 1}).astype(int)
+    print("*** Dropped ", np.where(outliers_vector < 0)[0].size, " outliers out of ", original_size, "examples ***")
     return data
 
 
@@ -311,7 +290,8 @@ def mutual_info_k_best(data):
     train_data_X = data.drop(['Vote'], axis=1).values
     train_data_Y = data.Vote.values
 
-    univariate_filter = SelectKBest(mutual_info_classif, k=23).fit(train_data_X, train_data_Y)
+    univariate_filter = SelectKBest(mutual_info_classif, k=30).fit(train_data_X, train_data_Y)
+    # univariate_filter = SelectKBest(mutual_info_classif, k=23).fit(train_data_X, train_data_Y)
     # print(univariate_filter.scores_)
     deleted = 0
     for i, is_chosen in enumerate(univariate_filter.get_support(False)):
@@ -329,7 +309,6 @@ def mutual_info_k_best(data):
 
     print("\n*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
     return data
-
 
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
@@ -417,26 +396,30 @@ def mutual_info_k_best(data):
 # Main
 ################################################################################
 def main():
-    pd.options.mode.chained_assignment = None
     data = load_data('ElectionsData_orig.csv')
+    pd.DataFrame.to_csv(data, 'data.csv')
 
-    train, train_indices, validation, validation_indices, test, test_indices = split_data(data)
-    export_sets(train, validation, test, raw="yes")
+    train_indices, validation_indices, test_indices = split_data_indices(data)
 
-    train, validation, test = modify_types(train, validation, test)
+    original_train, original_validation, original_test = get_subsets(data, train_indices, validation_indices, \
+                                                                     test_indices)
+    save_to_file(original_train, original_validation, original_test, '_raw')
+
+    data = modify_types(data)
+    data = remove_negative_values_from_data(data)
+
+    train, validation, test = get_subsets(data, train_indices, validation_indices, test_indices)
     train, validation, test = fill_missing_values(train, validation, test)
-    train = filter_outliers(train)
-    train = remove_negative_values_from_data(train)
+
+    train_without_outliers = filter_outliers(train)
+
+    #TODO: Relief train_without_outliers
+    #TODO: SFS train_without_outliers
+
+    train_without_outliers = variance_threshold_filter(train_without_outliers, 0.1)
+    train_without_outliers = mutual_info_k_best(train_without_outliers)
 
 
-    #TODO: create train without outliers for feature selection
-    #train_without_outliers = filter_outliers(train)
-
-    #call_relief(data)
-    # data = variance_threshold_filter(data, 0.1)
-    # data = mutual_info_k_best(data)
-    # data = mutual_info_k_best(data)
-    #
     # normalize_data(data)
 
     # mutual_info_k_best(data)
@@ -445,9 +428,6 @@ def main():
     # print(data.columns.size)
     # print("\n", data.head())
     # print("\n", data['Num_of_kids_born_last_10_years'].head())
-
-    export_sets(train, validation, test, raw="no")
-
     return
 
 

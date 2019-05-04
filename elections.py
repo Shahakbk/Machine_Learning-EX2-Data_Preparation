@@ -3,16 +3,13 @@ import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.impute import SimpleImputer
 from scipy.stats import normaltest
-from scipy.stats import kurtosis
 from sklearn.neighbors import LocalOutlierFactor
-from matplotlib import pyplot
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.feature_selection import SelectFwe
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif, chi2
-from sklearn.preprocessing import MinMaxScaler
 import random
 
 
@@ -294,16 +291,16 @@ def variance_threshold_filter(data, p):
     selector.fit(data.drop(['Vote'], axis=1))
 
     print("Selecting Features: ", np.where(selector.variances_ >= p)[0])
-    return (selector.variances_ >= p).astype(np.int)
-    # filtered = np.where(selector.variances_ < p)[0]
-    # for i, feature_index in enumerate(filtered):
-    #     if feature_index == 0:
-    #         continue
-    #
-    #     data = data.drop([data.columns[feature_index - i]], axis=1)
-    #
-    # print("*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
-    # return data
+    # return (selector.variances_ >= p).astype(np.int)
+    filtered = np.where(selector.variances_ < p)[0]
+    for i, feature_index in enumerate(filtered):
+        if feature_index == 0:
+            continue
+
+        data = data.drop([data.columns[feature_index - i]], axis=1)
+
+    print("*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
+    return data
 
 
 def feature_importance_forest(data):
@@ -546,29 +543,29 @@ def main():
     train_without_outliers = filter_outliers(train)
     train, validation, test = normalize_data(train, validation, test, train_without_outliers)
 
-    filter_vector = np.zeros((data.columns.size - 1,), dtype=int)
-    #TODO: Relief train_without_outliers
-    #TODO: SFS train_without_outliers
-
     ################################################################################
     # Filter methods
     ################################################################################
-    call_relief(train_without_outliers)
-    # filter_vector += variance_threshold_filter(train_without_outliers, 0.1)
-    # filter_vector += mutual_info_k_best(train_without_outliers)
-    # filter_vector += select_fwe(train_without_outliers)
+    train_without_outliers = call_relief(train_without_outliers)
+    train_without_outliers += variance_threshold_filter(train_without_outliers, 0.1) TODO: if relief is good, keep this commented
+
 
     ################################################################################
     # Wrappers
     ################################################################################
+    # TODO: a conservative call for: train_without_outliers = call_sfs(train_without_outliers)
+
+    filter_vector = np.zeros((train_without_outliers.columns.size - 1,), dtype=int)
+    # NOTE: filter_vector doesn't start with all features, because of relief/variance/sfs calls
+
     # filter_vector += feature_importance_forest(train_without_outliers)
+    # filter_vector += mutual_info_k_best(train_without_outliers)
+    # filter_vector += select_fwe(train_without_outliers)
     # print(sum((filter_vector >= 2).astype(np.int)))
 
     # normalize_data(data)
 
-    # print(data.columns.size)
-    # print("\n", data.head())
-    # print("\n", data['Num_of_kids_born_last_10_years'].head())
+    # TODO: Write sets and filter_vector to file
     return
 
 

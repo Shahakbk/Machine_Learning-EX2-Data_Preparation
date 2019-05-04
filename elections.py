@@ -12,6 +12,7 @@ from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif, chi2
+from sklearn.preprocessing import MinMaxScaler
 import random
 
 
@@ -270,17 +271,19 @@ def variance_threshold_filter(data, p):
     size_before = data.columns.size
 
     selector = VarianceThreshold(threshold=p)
-    selector.fit(data)
+    selector.fit(data.drop(['Vote'], axis=1))
 
-    filtered = np.where(selector.variances_ < p)[0]
-    for i, feature_index in enumerate(filtered):
-        if feature_index == 0:
-            continue
-
-        data = data.drop([data.columns[feature_index - i]], axis=1)
-
-    print("\n*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
-    return data
+    print("Selecting Features: ", np.where(selector.variances_ >= p)[0])
+    return (selector.variances_ >= p).astype(np.int)
+    # filtered = np.where(selector.variances_ < p)[0]
+    # for i, feature_index in enumerate(filtered):
+    #     if feature_index == 0:
+    #         continue
+    #
+    #     data = data.drop([data.columns[feature_index - i]], axis=1)
+    #
+    # print("*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
+    # return data
 
 
 def feature_importance_forest(data):
@@ -290,21 +293,21 @@ def feature_importance_forest(data):
     train_data_X = data.drop(['Vote'], axis=1).values
     train_data_Y = data.Vote.values
 
-    classifier = ExtraTreesClassifier(n_estimators=100).fit(train_data_X, train_data_Y)
-    model = SelectFromModel(classifier, threshold=0.0075, prefit=True)
+    classifier = ExtraTreesClassifier(n_estimators=1000).fit(train_data_X, train_data_Y)
+    model = SelectFromModel(classifier, threshold=0.01, prefit=True)
 
     print("Selecting Features: ", model.get_support(True))
-
-    deleted = 0
-    for i, is_chosen in enumerate(model.get_support(indices=False)):
-        if is_chosen:
-            continue
-
-        data = data.drop([data.columns[i + 1 - deleted]], axis=1)
-        deleted += 1
-
-    print("*** Done using feature importance forest. Filtered ", size_before - data.columns.size, " features ***")
-    return data
+    return (model.get_support(indices=False)).astype(np.int)
+    # deleted = 0
+    # for i, is_chosen in enumerate(model.get_support(indices=False)):
+    #     if is_chosen:
+    #         continue
+    #
+    #     data = data.drop([data.columns[i + 1 - deleted]], axis=1)
+    #     deleted += 1
+    #
+    # print("*** Done using feature importance forest. Filtered ", size_before - data.columns.size, " features ***")
+    # return data
 
 
 def select_fwe(data):
@@ -317,17 +320,18 @@ def select_fwe(data):
     univariate_filter = SelectFwe(chi2, alpha=0.001).fit(train_data_X, train_data_Y)
 
     print("Selecting Features: ", univariate_filter.get_support(True))
+    return (univariate_filter.get_support(indices=False)).astype(np.int)
 
-    deleted = 0
-    for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
-        if is_chosen:
-            continue
-
-        data = data.drop([data.columns[i + 1 - deleted]], axis=1)
-        deleted += 1
-
-    print("*** Done using select fwe. Filtered ", size_before - data.columns.size, " features ***")
-    return data
+    # deleted = 0
+    # for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
+    #     if is_chosen:
+    #         continue
+    #
+    #     data = data.drop([data.columns[i + 1 - deleted]], axis=1)
+    #     deleted += 1
+    #
+    # print("*** Done using select fwe. Filtered ", size_before - data.columns.size, " features ***")
+    # return data
 
 
 def mutual_info_k_best(data):
@@ -337,101 +341,105 @@ def mutual_info_k_best(data):
     train_data_X = data.drop(['Vote'], axis=1).values
     train_data_Y = data.Vote.values
 
-    univariate_filter = SelectKBest(mutual_info_classif, k=22).fit(train_data_X, train_data_Y)
-    print(univariate_filter.scores_)
+    univariate_filter = SelectKBest(mutual_info_classif, k=18).fit(train_data_X, train_data_Y)
+
     print("Selecting Features: ", univariate_filter.get_support(True))
+    return (univariate_filter.get_support(indices=False)).astype(np.int)
 
-    deleted = 0
-    for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
-        if is_chosen:
-            continue
-
-        data = data.drop([data.columns[i + 1 - deleted]], axis=1)
-        deleted += 1
-
-    print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
-    return data
+    # deleted = 0
+    # for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
+    #     if is_chosen:
+    #         continue
+    #
+    #     data = data.drop([data.columns[i + 1 - deleted]], axis=1)
+    #     deleted += 1
+    #
+    # print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
+    # return data
 
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
 ################################################################################
-# def euclidean(X, i, j):
-#     sum = 0
-#     num_features = len(X[0])
-#     for idx in range(num_features):
-#         sum = sum + (X[i][idx] - X[j][idx]) ** 2
-#     return np.sqrt(sum)
-#
-# def get_nearhit(X, y, p):
-#     min_dist = np.inf
-#     min_idx = np.inf
-#
-#     num_features = len(X[0])
-#     # Iterate the features.
-#     for i in range(num_features):
-#         # Check if it's a miss.
-#         if y[i] != y[p]:
-#             cur_dist = euclidean(X, i, p)
-#             if cur_dist < min_dist:
-#                 min_dist = cur_dist
-#                 min_idx = i
-#
-#     return min_idx if min_idx != np.inf else p
-#
-# def get_nearmiss(X, y, p):
-#     min_dist = np.inf
-#     min_idx = np.inf
-#
-#     num_features = len(X[0])
-#     # Iterate the features.
-#     for i in range(num_features):
-#         # Check if it's a hit.
-#         if y[i] == y[p]:
-#             cur_dist = euclidean(X, i, p)
-#             if cur_dist < min_dist:
-#                 min_dist = cur_dist
-#                 min_idx = i
-#
-#     return min_idx if min_idx != np.inf else p
-#
-# def relief(X, y, threshold, num_iter=20):
-#     # Init an empty weigths vector.
-#     weights = np.zeros(len(X[0]))
-#     features = set([])
-#
-#     # Algorithm iterations:
-#     for t in range(num_iter):
-#         # Pick a random sample.
-#         p = random.randint(0, X.shape[0])
-#
-#         nearhit = get_nearhit(X, y, p)
-#         nearmiss = get_nearmiss(X, y, p)
-#
-#
-#         # Iterating the features and updating the weights.
-#         for i in range(len(X[0])):
-#             weights[i] = weights[i] + (X[p][i] - X[nearmiss][i]) ** 2 - (X[p][i] - X[nearhit][i]) ** 2
-#
-#     # Returns a set of the best features.
-#     idx = 0
-#     for i in range(len(X[0])):
-#         if weights[idx] > threshold:
-#             features.add(i + 1)
-#         idx = idx + 1
-#
-#     return features
-#
-# def call_relief(data):
-#     print("Using relief for feature selection:")
-#     size_before = data.columns.size
-#
-#     train_data_X = data.drop(['Vote'], axis=1).values
-#     train_data_Y = data.Vote.values
-#
-#     print(relief(train_data_X, train_data_Y, 0, num_iter=1000))
-#
-#     print("\n*** Done using relief. Filtered ", size_before - data.columns.size, " features ***")
-#     return data
+def euclidean(X, i, j):
+    sum = 0
+    num_features = len(X[0])
+    for idx in range(num_features):
+        sum = sum + (X[i][idx] - X[j][idx]) ** 2
+    return np.sqrt(sum)
+
+def get_nearhit(X, y, p):
+    min_dist = np.inf
+    min_idx = np.inf
+
+    num_features = len(X[0])
+    # Iterate the features.
+    for i in range(num_features):
+        # Check if it's a miss.
+        if y[i] != y[p]:
+            cur_dist = euclidean(X, i, p)
+            if cur_dist < min_dist:
+                min_dist = cur_dist
+                min_idx = i
+
+    return min_idx if min_idx != np.inf else p
+
+def get_nearmiss(X, y, p):
+    min_dist = np.inf
+    min_idx = np.inf
+
+    num_features = len(X[0])
+    # Iterate the features.
+    for i in range(num_features):
+        # Check if it's a hit.
+        if y[i] == y[p]:
+            cur_dist = euclidean(X, i, p)
+            if cur_dist < min_dist:
+                min_dist = cur_dist
+                min_idx = i
+
+    return min_idx if min_idx != np.inf else p
+
+def relief(X, y, threshold, num_iter=20):
+    # Init an empty weigths vector.
+    weights = np.zeros(len(X[0]))
+    features = set([])
+
+    # Algorithm iterations:
+    for t in range(num_iter):
+        # Pick a random sample.
+        p = random.randint(0, X.shape[0])
+
+        nearhit = get_nearhit(X, y, p)
+        nearmiss = get_nearmiss(X, y, p)
+
+
+        # Iterating the features and updating the weights.
+        for i in range(len(X[0])):
+            weights[i] = weights[i] + (X[p][i] - X[nearmiss][i]) ** 2 - (X[p][i] - X[nearhit][i]) ** 2
+
+    # Returns a set of the best features.
+    idx = 0
+    for i in range(len(X[0])):
+        if weights[idx] > threshold:
+            features.add(i + 1)
+        idx = idx + 1
+
+    print("weights are: ", weights)
+    return features
+
+def call_relief(data):
+    print("Using relief for feature selection:")
+    size_before = data.columns.size
+
+    scaled_data = normalize_data(data)
+
+    train_data_X = scaled_data.drop(['Vote'], axis=1).values
+    train_data_Y = scaled_data.Vote.values
+
+    print(relief(train_data_X, train_data_Y, 0, num_iter=1000))
+
+    print("\n*** Done using relief. Filtered ", size_before - data.columns.size, " features ***")
+    return data
 
 
 ################################################################################
@@ -456,13 +464,23 @@ def main():
 
     train_without_outliers = filter_outliers(train)
 
+    filter_vector = np.zeros((data.columns.size - 1,), dtype=int)
     #TODO: Relief train_without_outliers
     #TODO: SFS train_without_outliers
 
-    # train_without_outliers = variance_threshold_filter(train_without_outliers, 0.1)
-    train_without_outliers = feature_importance_forest(train_without_outliers)
-    # train_without_outliers = select_fwe(train_without_outliers)
-    # train_without_outliers = mutual_info_k_best(train_without_outliers)
+    ################################################################################
+    # Filter methods
+    ################################################################################
+    call_relief(train_without_outliers)
+    # filter_vector += variance_threshold_filter(train_without_outliers, 0.1)
+    # filter_vector += mutual_info_k_best(train_without_outliers)
+    # filter_vector += select_fwe(train_without_outliers)
+
+    ################################################################################
+    # Wrappers
+    ################################################################################
+    # filter_vector += feature_importance_forest(train_without_outliers)
+    # print(sum((filter_vector >= 2).astype(np.int)))
 
     # normalize_data(data)
 

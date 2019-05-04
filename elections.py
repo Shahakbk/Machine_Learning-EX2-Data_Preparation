@@ -361,45 +361,44 @@ def mutual_info_k_best(data):
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
 ################################################################################
-def euclidean(X, i, j):
+def euclidean(i, j):
     sum = 0
-    num_features = len(X.keys())
-    for idx in range(num_features):
-        sum = sum + (X.loc[i][idx] - X.loc[j][idx]) ** 2
+    for x, y in zip(i, j):
+        sum += (x - y) ** 2
     return np.sqrt(sum)
 
 
 def get_nearhit(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
-    num_samples = len(X[X.keys()[0]])
 
     # Iterate the samples.
-    for i in range(num_samples):
+    for i in range(len(X[X.keys()[0]])):
         # Check if it's a hit.
-        if y[i] == y[p]:
-            cur_dist = euclidean(X, i, p)
+        if p != i and y.loc[i] == y.loc[p]:
+            cur_dist = euclidean(X.loc[p], X.loc[i])
             if cur_dist < min_dist:
                 min_dist = cur_dist
                 min_idx = i
 
     return min_idx if min_idx != np.inf else p
+
 
 def get_nearmiss(X, y, p):
     min_dist = np.inf
     min_idx = np.inf
-    num_samples = len(X[X.keys()[0]])
 
     # Iterate the samples.
-    for i in range(num_samples):
+    for i in range(len(X[X.keys()[0]])):
         # Check if it's a miss.
         if y[i] != y[p]:
-            cur_dist = euclidean(X, i, p)
+            cur_dist = euclidean(X.loc[p], X.loc[i])
             if cur_dist < min_dist:
                 min_dist = cur_dist
                 min_idx = i
 
     return min_idx if min_idx != np.inf else p
+
 
 def relief(X, y, threshold, num_iter=20):
     # Init an empty weights vector.
@@ -413,19 +412,18 @@ def relief(X, y, threshold, num_iter=20):
 
         nearhit = get_nearhit(X, y, p)
         nearmiss = get_nearmiss(X, y, p)
-
         # Iterating the features and updating the weights.
         for i in range(len(X.keys())):
-            weights[i] = weights[i] + (X.loc[p][i] - X.loc[nearmiss][i]) ** 2 - (X.loc[p][i] - X.loc[nearhit][i]) ** 2
+            weights[i] += (X.loc[p][i] - X.loc[nearmiss][i]) ** 2 - (X.loc[p][i] - X.loc[nearhit][i]) ** 2
 
     # Returns a set of the best features.
     idx = 0
     for feature in X.keys():
         if weights[idx] < threshold:
-            features.add(idx)
+            features.add(feature)
         idx = idx + 1
 
-    print("weights are: ", weights)
+    print("Weights are: ", weights)
     return features
 
 
@@ -438,6 +436,8 @@ def call_relief(data):
     train_data_X = scaled_data.drop(['Vote'], axis=1)
     train_data_Y = scaled_data['Vote']
 
+    filtered = relief(train_data_X, train_data_Y, 0, num_iter=5) # TODO set num_iter
+    #data = data.drop(list(filtered), axis=1) # TODO set in order for relief to filter
     print("\n*** Done using relief. Filtered ", size_before - data.columns.size, " features ***")
     return data
 

@@ -3,16 +3,18 @@ import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.impute import SimpleImputer
 from scipy.stats import normaltest
-from scipy.stats import kurtosis
 from sklearn.neighbors import LocalOutlierFactor
-from matplotlib import pyplot
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.feature_selection import SelectFwe
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif, chi2
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import ExtraTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
 import random
 
 
@@ -294,16 +296,20 @@ def variance_threshold_filter(data, p):
     selector.fit(data.drop(['Vote'], axis=1))
 
     print("Selecting Features: ", np.where(selector.variances_ >= p)[0])
-    return (selector.variances_ >= p).astype(np.int)
-    # filtered = np.where(selector.variances_ < p)[0]
-    # for i, feature_index in enumerate(filtered):
-    #     if feature_index == 0:
-    #         continue
-    #
-    #     data = data.drop([data.columns[feature_index - i]], axis=1)
-    #
-    # print("*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
-    # return data
+    filtered_features = set([])
+    filtered = np.where(selector.variances_ < p)[0]
+    for i, feature_index in enumerate(filtered):
+        if feature_index == 0:
+            continue
+
+        feature = data.columns[feature_index - i]
+        data = data.drop([feature], axis=1)
+        filtered_features.add(feature)
+
+    print("Filtered features:\n")
+    print(filtered_features)
+    print("*** Done using variance threshold. Filtered ", size_before - data.columns.size, " features ***")
+    return data
 
 
 def feature_importance_forest(data):
@@ -314,7 +320,7 @@ def feature_importance_forest(data):
     train_data_Y = data.Vote.values
 
     classifier = ExtraTreesClassifier(n_estimators=1000).fit(train_data_X, train_data_Y)
-    model = SelectFromModel(classifier, threshold=0.01, prefit=True)
+    model = SelectFromModel(classifier, threshold=3e-2, prefit=True)
 
     print("Selecting Features: ", model.get_support(True))
     return (model.get_support(indices=False)).astype(np.int)
@@ -361,7 +367,7 @@ def mutual_info_k_best(data):
     train_data_X = data.drop(['Vote'], axis=1).values
     train_data_Y = data.Vote.values
 
-    univariate_filter = SelectKBest(mutual_info_classif, k=18).fit(train_data_X, train_data_Y)
+    univariate_filter = SelectKBest(mutual_info_classif, k=10).fit(train_data_X, train_data_Y)
 
     print("Selecting Features: ", univariate_filter.get_support(True))
     return (univariate_filter.get_support(indices=False)).astype(np.int)
@@ -377,6 +383,34 @@ def mutual_info_k_best(data):
     # print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
     # return data
 
+
+################################################################################
+# Non-Mandatory(Bonus) A. Features correlation with label
+################################################################################
+def find_features_correlated_to_label(data, threshold=0.1):
+    print("\n\nChecking for features correlated to 'Vote':")
+
+    corr = data.corr(method='pearson', min_periods=1)
+    np.fill_diagonal(corr.values, 0)  # Ignore correlation with self
+    correlated_features = set([feature for feature in corr.keys() if abs(corr['Vote'][feature]) >= threshold])
+    print("The features with a correlation higher than the threshold (" + str(threshold) + ") are:")
+    print(correlated_features)
+
+
+def find_correlation_between_features(data, threshold=0.9):
+    print("\n\nChecking correlation between features:")
+    corr = data.corr(method='pearson', min_periods=1)
+    np.fill_diagonal(corr.values, 0)  # Ignore correlation with self
+    correlated_pairs = set([])
+    for feature_1 in corr.keys():
+        for feature_2 in corr.keys():
+            if corr[feature_1][feature_2] >= threshold:
+                correlated_pairs.add((feature_1, feature_2))
+
+    print("The pairs with correlation are:")
+    print(correlated_pairs)
+
+    return correlated_pairs
 
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
@@ -420,7 +454,7 @@ def get_nearmiss(X, y, p):
     return min_idx if min_idx != np.inf else p
 
 
-def relief(X, y, threshold, num_iter=20):
+def relief(X, y, threshold=0.1, num_iter=1000):
     # Init an empty weights vector.
     weights = np.zeros(len(X.keys()))
     features = set([])
@@ -443,24 +477,37 @@ def relief(X, y, threshold, num_iter=20):
             features.add(feature)
         idx = idx + 1
 
-    print("Weights are: ", weights)
+    print("\nWeights:\n")
+    for i, feature in enumerate(X.keys()):
+        print(feature, ": ", weights[i])
+
     return features
 
 
-def call_relief(data):
-    print("Using relief for feature selection:")
+def call_relief(data, num_runs=10):
+    print("\nUsing relief for feature selection:")
     size_before = data.columns.size
 
-    #scaled_data = normalize_data(data)
+    norm_table = create_normalization_table(data)
+    scaled_data = normalize_set(data, norm_table)
 
-    #train_data_X = scaled_data.drop(['Vote'], axis=1)
-    #train_data_Y = scaled_data['Vote']
-    train_data_X = data.drop(['Vote'], axis=1)
-    train_data_Y = data['Vote']
+    train_data_X = scaled_data.drop(['Vote'], axis=1)
+    train_data_Y = scaled_data['Vote']
 
-    filtered = relief(train_data_X, train_data_Y, 0, num_iter=5) # TODO set num_iter
-    #data = data.drop(list(filtered), axis=1) # TODO set in order for relief to filter
-    print("\n*** Done using relief. Filtered ", size_before - data.columns.size, " features ***")
+    total_sets = []
+    for i in range(num_runs):
+        filtered = relief(train_data_X, train_data_Y, 0, num_iter=100)
+        total_sets.append(filtered)
+
+    final_set = set([])
+    for feature in data.keys():
+        final_set.add(feature)
+    final_set = final_set.intersection(*total_sets)
+
+    data = data.drop(list(final_set), axis=1)
+
+    print("\nThe filtered features are:\n", final_set)
+    print("\n*** Done using relief. ", len(final_set), " features filtered. ***")
     return data
 
 
@@ -505,8 +552,8 @@ def sfs(X_train, y_train, X_test, y_test, base_model, threshold=0.000001):
     return best_features
 
 
-def call_sfs(data, test, base_model):
-    print("Using SFS for feature selection:")
+def call_sfs(data, test):
+    print("\nUsing SFS for feature selection with Decision Tree, Extra Tree, KNN(n=5), SVM and Random Forest:\n")
     size_before = data.columns.size
 
     train_data_X = data.drop(['Vote'], axis=1)
@@ -515,12 +562,24 @@ def call_sfs(data, test, base_model):
     test_data_X = test.drop(['Vote'], axis=1)
     test_data_Y = test.Vote.values
 
-    filtered = sfs(train_data_X, train_data_Y, test_data_X, test_data_Y, base_model=base_model)
-    data = data.drop(list(filtered), axis=1)
-    print(filtered)
+    base_models = [(DecisionTreeClassifier(), "DTC"), (ExtraTreesClassifier(), "ETC"), (KNeighborsClassifier(), "KNN"),
+                   (SVC(gamma='scale'), "SVM"),
+                   (RandomForestClassifier(random_state=1, n_estimators=100, max_depth=None), "RF")]
 
-    print("\n*** Done using SFS. Filtered ", size_before - data.columns.size, " features ***")
-    return data
+    for (base_model, model_name) in base_models:
+        features = sfs(train_data_X, train_data_Y, test_data_X, test_data_Y, base_model)
+        print(model_name, " found ", len(features), " good features with SFS:")
+
+    # Based on results, as described in the report.
+    chosen_features = ['Avg_education_importance', 'Number_of_valued_Kneset_members', 'Avg_monthly_income_all_years',
+                       'Avg_government_satisfaction', 'Last_school_grades']
+
+    print("\nThe chosen features are:\n", chosen_features)
+
+    data = data.drop(chosen_features, axis=1)
+
+    print("\n*** Done using SFS. ", len(chosen_features), " features were chosen. ***")
+    return data, chosen_features
 
 
 ################################################################################
@@ -529,7 +588,7 @@ def call_sfs(data, test, base_model):
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
-    data = load_data('ElectionsData_orig.csv')
+    data = load_data('ElectionsData.csv')
     pd.DataFrame.to_csv(data, 'data.csv')
 
     train_indices, validation_indices, test_indices = split_data_indices(data)
@@ -546,29 +605,49 @@ def main():
     train_without_outliers = filter_outliers(train)
     train, validation, test = normalize_data(train, validation, test, train_without_outliers)
 
-    filter_vector = np.zeros((data.columns.size - 1,), dtype=int)
-    #TODO: Relief train_without_outliers
-    #TODO: SFS train_without_outliers
+    find_features_correlated_to_label(train_without_outliers)
 
     ################################################################################
     # Filter methods
     ################################################################################
-    call_relief(train_without_outliers)
-    # filter_vector += variance_threshold_filter(train_without_outliers, 0.1)
-    # filter_vector += mutual_info_k_best(train_without_outliers)
-    # filter_vector += select_fwe(train_without_outliers)
+
+    train_without_outliers = variance_threshold_filter(train_without_outliers, 0.1)
+    # Based on the results:
+    # train_without_outliers = train_without_outliers.drop(['Voting_Time', 'Financial_balance_score_(0-1)'], axis=1)
+
+    train_without_outliers = call_relief(train_without_outliers)
+    # Based on the results:
+    # train_without_outliers = train_without_outliers.drop(['Number_of_differnt_parties_voted_for'], axis=1)
 
     ################################################################################
     # Wrappers
     ################################################################################
-    # filter_vector += feature_importance_forest(train_without_outliers)
-    # print(sum((filter_vector >= 2).astype(np.int)))
 
-    # normalize_data(data)
+    train_without_outliers, chosen_features = call_sfs(train_without_outliers, test)
+    # Based on the results:
+    # chosen_features = ['Avg_education_importance', 'Number_of_valued_Kneset_members', 'Avg_monthly_income_all_years',
+    #                    'Avg_government_satisfaction', 'Last_school_grades']
+    # train_without_outliers = train_without_outliers.drop(chosen_features, axis=1)
 
-    # print(data.columns.size)
-    # print("\n", data.head())
-    # print("\n", data['Num_of_kids_born_last_10_years'].head())
+    filter_vector = np.zeros((train_without_outliers.columns.size - 1,), dtype=int)
+    # NOTE: filter_vector doesn't start with all features, because of relief/variance/sfs calls
+
+    filter_vector += feature_importance_forest(train_without_outliers)
+    filter_vector += mutual_info_k_best(train_without_outliers)
+    filter_vector += select_fwe(train_without_outliers)
+
+    for i, feature in enumerate(train_without_outliers.drop(['Vote'], axis=1).keys()):
+        if filter_vector[i] >= 2:
+            chosen_features.append(feature)
+
+    print("\n\nThe final set of chosen features is:\n", chosen_features)
+
+    train = train[chosen_features]
+    validation = validation[chosen_features]
+    test = test[chosen_features]
+
+    save_to_file(train, validation, test)
+
     return
 
 

@@ -348,17 +348,6 @@ def select_fwe(data):
     print("Selecting Features: ", univariate_filter.get_support(True))
     return (univariate_filter.get_support(indices=False)).astype(np.int)
 
-    # deleted = 0
-    # for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
-    #     if is_chosen:
-    #         continue
-    #
-    #     data = data.drop([data.columns[i + 1 - deleted]], axis=1)
-    #     deleted += 1
-    #
-    # print("*** Done using select fwe. Filtered ", size_before - data.columns.size, " features ***")
-    # return data
-
 
 def mutual_info_k_best(data):
     print("\nUsing mutual info k-best for feature selection:")
@@ -371,17 +360,6 @@ def mutual_info_k_best(data):
 
     print("Selecting Features: ", univariate_filter.get_support(True))
     return (univariate_filter.get_support(indices=False)).astype(np.int)
-
-    # deleted = 0
-    # for i, is_chosen in enumerate(univariate_filter.get_support(indices=False)):
-    #     if is_chosen:
-    #         continue
-    #
-    #     data = data.drop([data.columns[i + 1 - deleted]], axis=1)
-    #     deleted += 1
-    #
-    # print("*** Done using mutual info k-best. Filtered ", size_before - data.columns.size, " features ***")
-    # return data
 
 
 ################################################################################
@@ -396,21 +374,6 @@ def find_features_correlated_to_label(data, threshold=0.1):
     print("The features with a correlation higher than the threshold (" + str(threshold) + ") are:")
     print(correlated_features)
 
-
-def find_correlation_between_features(data, threshold=0.9):
-    print("\n\nChecking correlation between features:")
-    corr = data.corr(method='pearson', min_periods=1)
-    np.fill_diagonal(corr.values, 0)  # Ignore correlation with self
-    correlated_pairs = set([])
-    for feature_1 in corr.keys():
-        for feature_2 in corr.keys():
-            if corr[feature_1][feature_2] >= threshold:
-                correlated_pairs.add((feature_1, feature_2))
-
-    print("The pairs with correlation are:")
-    print(correlated_pairs)
-
-    return correlated_pairs
 
 ################################################################################
 # Non-Mandatory(Bonus) B. Relief
@@ -569,6 +532,7 @@ def call_sfs(data, test):
     for (base_model, model_name) in base_models:
         features = sfs(train_data_X, train_data_Y, test_data_X, test_data_Y, base_model)
         print(model_name, " found ", len(features), " good features with SFS:")
+        print(features)
 
     # Based on results, as described in the report.
     chosen_features = ['Avg_education_importance', 'Number_of_valued_Kneset_members', 'Avg_monthly_income_all_years',
